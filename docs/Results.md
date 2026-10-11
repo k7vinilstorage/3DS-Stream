@@ -89,3 +89,44 @@ change on the server.
 - If the burst figure holds with bigger frames, the 3DS Wi-Fi is several
   times the PSP's 802.11b (~400-600 KB/s): JPEG at 18 KB x 55 fps
   (~1 MB/s) would fit.
+
+### Network with JPEG (probe 0.3, server `--size 400x240`)
+
+| measure | value |
+|---|---|
+| "Find the PC" | 18 ms |
+| ping | 20/20; min 4.0, median 5.6, max 110.1 ms (one spike) |
+| frames, network only (6 s) | 120 frames, **0 lost**, 55.1 KB/frame |
+| burst (first -> last chunk, ~40 chunks/frame) | **~3.0 MB/s** (2.9-3.0) |
+| one frame at a time | 20 fps (request -> 1st chunk 33 ms + burst ~18 ms) |
+| with decode + show (fast IDCT to RGB565, CPU rotation) | 11 fps, 44.9 ms/frame |
+
+- **The 3DS Wi-Fi gives ~3 MB/s**, with no frame lost in ~190 frames
+  (~7,500 packets): about 6x the PSP's 802.11b. The network is not the
+  limit on the Old 3DS; the decode is.
+- The 20 fps is the probe asking for one frame at a time (each frame pays
+  the wait for a new capture frame and the round trip). The client asks
+  ahead, as the PSP does (the 2-frame credit window), so transfer and
+  decode overlap.
+- **The server's adaptive quality went to its maximum (q90, 55 KB/frame)**:
+  it sizes frames by throughput x max(1/20 s, decode time), which suits the
+  PSP's hardware JPEG (decode time hardly depends on the size) but not the
+  3DS's software decode, where bigger frames decode slower (17.7 ms at q70,
+  22.9 at q95 for the desktop image, `rawf`). For the 3DS: `--q-max 70`
+  for now; in protocol v6, the server should pick the cap from the device
+  (or from the decode time the client reports).
+- The 44.9 ms decode + show is the probe's simple path (libjpeg to RGB565 at
+  q90 plus a CPU copy into the rotated framebuffer). The client uses the
+  raw + Y2R path and the GPU for the rotation.
+
+## Conclusions for the Old 3DS
+
+| part | plan said | measured |
+|---|---|---|
+| image path | JPEG, 20-30 fps | JPEG decoded to YCbCr (fast IDCT) + Y2R: ~17.7 ms CPU at q70, Y2R 6.1 ms in parallel: **~55 fps CPU-bound** |
+| network | to measure | **~3 MB/s, no losses, ping ~5.6 ms**: not the limit |
+| audio | NDSP + `ima.c` | works: 1.6% CPU, 7 ms start, no underruns |
+| "Find the PC" | to check | works (18-185 ms) |
+| server | unchanged for v5 | works with `--size 400x240 --q-max 70`; two v6 items: JPEG fallback when the client has no `PS_CAP_H264`, quality cap per device |
+
+Still open: MVD on a New 3DS (H.264, the `mvd_*` steps).
