@@ -1,0 +1,44 @@
+name: build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    container: devkitpro/devkitarm:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: build the probe
+        run: make -C probe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: 3ds-stream-probe
+          path: probe/3ds-stream-probe.3dsx
+
+  host-tests:
+    # The probe code built with the PC's gcc (tests/host/shim instead of libctru):
+    # test data, NAL splitting, frame markers, JPEG decode, and the network part
+    # against the real PSPStream server.
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: k7vinilstorage/PSP-Stream
+          path: PSP-Stream
+      - name: dependencies
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q gcc make libjpeg-turbo8-dev python3-gi gir1.2-gstreamer-1.0 \
+            gir1.2-gst-plugins-base-1.0 gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
+            gstreamer1.0-plugins-bad python3-pil
+      - name: data, NALs, markers, JPEG
+        run: make -C tests/host check
+      - name: network against the PSPStream server
+        run: tests/host/run_net.sh "$GITHUB_WORKSPACE/PSP-Stream" /usr/bin/python3
+      - name: server log
+        if: failure()
+        run: cat tests/host/server.out || true

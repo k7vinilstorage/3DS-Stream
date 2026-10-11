@@ -1,0 +1,9 @@
+probe/build/
+probe/*.3dsx
+probe/*.smdh
+probe/*.elf
+tests/host/probe_host
+tests/host/*.out
+tests/host/romfs:
+tests/host/sdmc:/
+__pycache__/
