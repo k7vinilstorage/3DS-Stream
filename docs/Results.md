@@ -34,8 +34,27 @@ run: the console was not on Wi-Fi (`socket()` failed with `ENETDOWN`; probe
 - That is better than the plan's guess for the Old 3DS (20-30 fps). The
   next limits are the Wi-Fi (18 KB/frame x 50 fps = 900 KB/s, still to be
   measured) and the network receive running on the same core.
-- Probe 0.2 adds the fast IDCT on the raw path (`rawf`), which should take
-  a few more ms off.
+- Probe 0.2 (same console) added the fast IDCT on the raw path (`rawf`):
+  **10-12% less CPU** than `raw`, e.g. 17.7 ms for the desktop image at q70
+  (20.1 with the exact IDCT) and 19.5 ms at q85. With Y2R overlapped, about
+  55 fps on a desktop at q70.
+
+| set (0.2) | raw | rawf |
+|---|---|---|
+| src2_q50 | 15.0 | 13.2 |
+| card_q50 | 18.9 | 16.5 |
+| src2_q70 | 15.6 | 13.7 |
+| card_q70 | 20.1 | 17.7 |
+| src2_q85 | 16.7 | 14.8 |
+| card_q85 | 22.0 | 19.5 |
+| src2_q95 | 18.2 | 16.3 |
+| card_q95 | 25.6 | 22.9 |
+
+The 0.2 run got on Wi-Fi (`192.168.3.130/24`) but the broadcast "Find the
+PC" had no answer and there was no `server.txt`, so the stream did not run.
+Probe 0.3 asks for the PC's IP on the keyboard and then tells apart "the PC
+does not answer" (server not running, firewall) from "it answers by IP but
+not to the broadcast" (router isolation or the 3DS).
 
 ### Audio
 

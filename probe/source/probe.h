@@ -8,7 +8,7 @@
 #include <3ds.h>
 #include <stdint.h>
 
-#define PROBE_VERSION "0.2"
+#define PROBE_VERSION "0.3"
 #define PROBE_DIR "sdmc:/3ds/3ds-stream"
 
 /* Tamanho do stream no 3DS: a tela de cima, 1:1. */

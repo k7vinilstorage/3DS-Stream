@@ -16,8 +16,9 @@ homebrew that measures them and writes everything to
    ```
    (`--source kms` or `portal` works too; the test pattern is enough.) The
    probe finds the PC with the same broadcast as "Find the PC" on the PSP;
-   if the router blocks it, put `server=192.168.x.y` in
-   `sdmc:/3ds/3ds-stream/server.txt`.
+   if nothing answers, it asks for the PC's IP on the keyboard and saves it
+   in `sdmc:/3ds/3ds-stream/server.txt` (you can also write
+   `server=192.168.x.y` there yourself).
 3. For audio, the DSP firmware dump must be at `sdmc:/3ds/dspfirm.cdc`
    (the usual DSP1 homebrew makes it). Without it, the audio step says so
    and the rest runs.

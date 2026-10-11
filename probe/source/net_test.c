@@ -140,7 +140,7 @@ static int cmp_u32(const void *a, const void *b)
     return x < y ? -1 : x > y;
 }
 
-static void pings(void)
+static int pings(void)
 {
     uint32_t rtt[20];
     int got = 0;
@@ -165,11 +165,12 @@ static void pings(void)
     }
     if (!got) {
         say("  ping: no answer (old server, firewall, or wrong address)");
-        return;
+        return 0;
     }
     qsort(rtt, got, sizeof(rtt[0]), cmp_u32);
     say("  ping: %d/20, min %.1f ms, median %.1f ms, max %.1f ms", got, rtt[0] / 1000.0, rtt[got / 2] / 1000.0,
         rtt[got - 1] / 1000.0);
+    return 1;
 }
 
 typedef struct {
@@ -340,6 +341,37 @@ static int wifi_wait(void)
     return 0;
 }
 
+/* Sem resposta ao broadcast nem server.txt: pergunta o IP no teclado da
+ * tela e guarda em server.txt para a próxima vez. 0 se ok. */
+static int ask_server_ip(char *ip, int iplen, struct in_addr me)
+{
+#ifdef __3DS__
+    char prefix[20];
+    const uint8_t *b = (const uint8_t *)&me.s_addr;
+    snprintf(prefix, sizeof(prefix), "%u.%u.%u.", b[0], b[1], b[2]); /* a mesma rede do 3DS */
+    SwkbdState kb;
+    swkbdInit(&kb, SWKBD_TYPE_NUMPAD, 2, 15);
+    swkbdSetNumpadKeys(&kb, '.', 0);
+    swkbdSetHintText(&kb, "IP of the PC running pspstream");
+    swkbdSetInitialText(&kb, prefix);
+    char buf[20];
+    if (swkbdInputText(&kb, buf, sizeof(buf)) != SWKBD_BUTTON_CONFIRM || !buf[0])
+        return -1;
+    struct in_addr a;
+    if (!inet_aton(buf, &a))
+        return -1;
+    snprintf(ip, iplen, "%s", buf);
+    FILE *f = fopen(PROBE_DIR "/server.txt", "w");
+    if (f) {
+        fprintf(f, "server=%s\n", buf);
+        fclose(f);
+    }
+    return 0;
+#else
+    return -1; /* testes no PC: sem teclado */
+#endif
+}
+
 void test_net(void)
 {
     say("");
@@ -379,9 +411,15 @@ void test_net(void)
 
     char ip[64];
     status("  looking for the PC (broadcast)...");
-    if (discover(ip, sizeof(ip)) && server_from_file(ip, sizeof(ip))) {
-        say("  no server: start pspstream on the PC, or put server=IP in " PROBE_DIR "/server.txt");
-        goto out;
+    int found_by_broadcast = discover(ip, sizeof(ip)) == 0;
+    if (!found_by_broadcast && server_from_file(ip, sizeof(ip)) == 0) {
+        say("  using server.txt");
+    } else if (!found_by_broadcast) {
+        if (ask_server_ip(ip, sizeof(ip), me)) {
+            say("  no server: start pspstream on the PC, or put server=IP in " PROBE_DIR "/server.txt");
+            goto out;
+        }
+        say("  typed on the keyboard (saved to server.txt)");
     }
     memset(&server, 0, sizeof(server));
     server.sin_family = AF_INET;
@@ -392,7 +430,15 @@ void test_net(void)
     }
     say("  server: %s", ip);
     status("  ping...");
-    pings();
+    int ping_ok = pings();
+    if (!ping_ok) {
+        say("  the PC does not answer: is pspstream running there, and is UDP 5123 open in its firewall");
+        say("  (pspstream --setup opens it)? The PC must be on the same network as the 3DS.");
+        goto out;
+    }
+    if (!found_by_broadcast)
+        say("  the PC answers by IP but not to the broadcast: the router (AP/client isolation)"
+            " or the 3DS blocks broadcasts; the client will need the IP in its settings");
 
     stream_stats_t st;
     status("  stream, network only (%d s)...", PHASE_S);
