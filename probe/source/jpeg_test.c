@@ -39,7 +39,7 @@ static uint16_t *y2r_out;
 static Handle y2r_event;
 static int y2r_ok;
 
-enum { M_RGB565, M_FAST, M_RAW };
+enum { M_RGB565, M_FAST, M_RAW, M_RAW_FAST, METHODS };
 
 /* Devolve 0 se ok. w, h: tamanho da imagem. */
 static int decode_rgb565(const uint8_t *jpg, uint32_t size, int fast, int *w, int *h)
@@ -70,7 +70,7 @@ static int decode_rgb565(const uint8_t *jpg, uint32_t size, int fast, int *w, in
 }
 
 /* Só até YCbCr 4:2:0. -3 se a imagem não for 4:2:0 (o servidor manda 4:2:0). */
-static int decode_raw(const uint8_t *jpg, uint32_t size, int *w, int *h)
+static int decode_raw(const uint8_t *jpg, uint32_t size, int fast, int *w, int *h)
 {
     if (setjmp(jerr.jmp)) {
         jpeg_abort_decompress(&cinfo);
@@ -84,7 +84,7 @@ static int decode_raw(const uint8_t *jpg, uint32_t size, int *w, int *h)
         return -3;
     }
     cinfo.raw_data_out = TRUE;
-    cinfo.dct_method = JDCT_ISLOW;
+    cinfo.dct_method = fast ? JDCT_IFAST : JDCT_ISLOW;
     jpeg_start_decompress(&cinfo);
     *w = cinfo.output_width;
     *h = cinfo.output_height;
@@ -205,12 +205,13 @@ static void run_set(const item_set_t *s, int method, meas_t *m)
         for (int i = 0; i < s->count; i++) {
             int w = 0, h = 0, rc;
             uint64_t t0 = now_us();
-            if (method == M_RAW)
-                rc = decode_raw(s->data[i], s->sizes[i], &w, &h);
+            int raw = method == M_RAW || method == M_RAW_FAST;
+            if (raw)
+                rc = decode_raw(s->data[i], s->sizes[i], method == M_RAW_FAST, &w, &h);
             else
                 rc = decode_rgb565(s->data[i], s->sizes[i], method == M_FAST, &w, &h);
             uint64_t t1 = now_us();
-            if (rc == 0 && method == M_RAW && y2r_ok) {
+            if (rc == 0 && raw && y2r_ok) {
                 rc = y2r_convert();
                 m->y2r_total += now_us() - t1;
             }
@@ -224,12 +225,12 @@ static void run_set(const item_set_t *s, int method, meas_t *m)
                 m->size_bad++;
             /* os frames src2 levam o número; o card não */
             if (r == 0 && !strncmp(s->name, "src2", 4)) {
-                int mk = method == M_RAW ? marker_y(py, VID_W) : marker_rgb565(rgb, VID_W, 0);
+                int mk = raw ? marker_y(py, VID_W) : marker_rgb565(rgb, VID_W, 0);
                 if (mk != i)
                     m->marker_bad++;
             }
             if (r == 0 && i == 0)
-                screen_show565(method == M_RAW && y2r_ok ? y2r_out : rgb, VID_W);
+                screen_show565(raw && y2r_ok ? y2r_out : rgb, VID_W);
         }
 }
 
@@ -245,31 +246,33 @@ static void run_all(const char *clock)
 {
     const item_set_t *sets;
     int n = data_jpegs(&sets);
-    say("  %-10s %5s %6s %6s %5s%5s  (ms/frame, %s)", "set", "KB", "rgb565", "fast", "raw", "+y2r", clock);
+    /* raw e rawf: só o libjpeg até YCbCr (IDCT exata / rápida); +y2r: a conversão no hardware, à parte */
+    say("  %-10s %5s %6s %6s %6s %6s %5s  (ms/frame, %s)", "set", "KB", "rgb565", "fast", "raw", "rawf", "+y2r",
+        clock);
     for (int i = 0; i < n; i++) {
         const item_set_t *s = &sets[i];
         uint32_t bytes = 0;
         for (int k = 0; k < s->count; k++)
             bytes += s->sizes[k];
-        meas_t m[3];
-        for (int method = 0; method < 3; method++)
-            run_set(s, method, &m[method]);
-        char a[16], b[16], c[16], d[16];
-        fmt_ms(a, sizeof(a), m[0].total, m[0].n);
-        fmt_ms(b, sizeof(b), m[1].total, m[1].n);
-        fmt_ms(c, sizeof(c), m[2].total, m[2].n);
-        if (y2r_ok)
-            fmt_ms(d, sizeof(d), m[2].y2r_total, m[2].n);
-        else
-            snprintf(d, sizeof(d), "  n/a");
-        say("  %-10s %5.1f %6s %6s %5s%5s", s->name, bytes / 1024.0 / s->count, a, b, c, d);
+        meas_t m[METHODS];
+        char col[METHODS][16], y2r[16];
         int bad = 0;
-        for (int method = 0; method < 3; method++)
+        for (int method = 0; method < METHODS; method++) {
+            run_set(s, method, &m[method]);
+            fmt_ms(col[method], sizeof(col[method]), m[method].total, m[method].n);
             bad |= m[method].errors || m[method].marker_bad || m[method].size_bad;
+        }
+        if (y2r_ok)
+            fmt_ms(y2r, sizeof(y2r), m[M_RAW].y2r_total, m[M_RAW].n);
+        else
+            snprintf(y2r, sizeof(y2r), "  n/a");
+        say("  %-10s %5.1f %6s %6s %6s %6s %5s", s->name, bytes / 1024.0 / s->count, col[M_RGB565], col[M_FAST],
+            col[M_RAW], col[M_RAW_FAST], y2r);
         if (bad)
-            say("    problems: errors %d/%d/%d, wrong frame number %d/%d/%d, wrong size %d/%d/%d", m[0].errors,
-                m[1].errors, m[2].errors, m[0].marker_bad, m[1].marker_bad, m[2].marker_bad, m[0].size_bad,
-                m[1].size_bad, m[2].size_bad);
+            for (int method = 0; method < METHODS; method++)
+                if (m[method].errors || m[method].marker_bad || m[method].size_bad)
+                    say("    problems (column %d): errors %d, wrong frame number %d, wrong size %d", method + 1,
+                        m[method].errors, m[method].marker_bad, m[method].size_bad);
     }
 }
 

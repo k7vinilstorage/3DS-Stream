@@ -37,6 +37,12 @@ static struct sockaddr_in server;
 static uint8_t frame[PS_MAX_JPEG];
 static uint8_t pkt[sizeof(ps_chunk_hdr_t) + PS_CHUNK_PAYLOAD + 64];
 
+/* errno da libctru: às vezes vem negativo (-ENETDOWN) */
+static const char *err_name(int e)
+{
+    return strerror(e < 0 ? -e : e);
+}
+
 static uint16_t u16clamp(uint64_t v)
 {
     return v > 0xFFFF ? 0xFFFF : (uint16_t)v;
@@ -244,7 +250,7 @@ static void stream_phase(int decode, stream_stats_t *st)
         uint64_t t_first, t_last, t_req = now_us();
         int r = get_frame(&req, st, &frame_no, &send_ts, &size, &t_first, &t_last);
         if (r < 0) {
-            say("  socket error %d", errno);
+            say("  socket error: %s", err_name(errno));
             return;
         }
         uint16_t flags = PS_REQ_FRAME;
@@ -307,12 +313,43 @@ static void stream_report(const char *what, const stream_stats_t *st)
         say("    stray chunks %d, header-stripped %d", st->stray, st->stripped);
 }
 
+/* O Wi-Fi conecta sozinho com a conexão das Configurações do Sistema, mas
+ * leva alguns segundos depois de abrir o app, e o Old 3DS tem a chave do
+ * Wi-Fi na lateral. Sem conexão, socket() falha com ENETDOWN. */
+static int wifi_wait(void)
+{
+    if (R_FAILED(acInit())) {
+        say("  ac service unavailable");
+        return -1;
+    }
+    u32 wifi = 0;
+    uint64_t t0 = now_us();
+    int shown = 0;
+    while (R_SUCCEEDED(ACU_GetWifiStatus(&wifi)) && !wifi && now_us() - t0 < 20 * 1000 * 1000ULL) {
+        if (!shown++)
+            status("  waiting for Wi-Fi (up to 20 s)...");
+        svcSleepThread(250 * 1000 * 1000LL);
+    }
+    acExit();
+    if (!wifi) {
+        say("  no Wi-Fi connection after 20 s: turn the wireless switch on (Old 3DS: on the side;");
+        say("  the LED lights up) and check the connection in System Settings > Internet Settings");
+        return -1;
+    }
+    say("  Wi-Fi connected after %.1f s", (now_us() - t0) / 1e6);
+    return 0;
+}
+
 void test_net(void)
 {
     say("");
     say("== Network (PSPStream server, UDP %d) ==", PS_DEFAULT_PORT);
     if (!step_begin("net"))
         return;
+    if (wifi_wait()) {
+        step_end();
+        return;
+    }
     soc_buf = memalign(0x1000, SOC_BUFFER_SIZE);
     if (!soc_buf || R_FAILED(socInit(soc_buf, SOC_BUFFER_SIZE))) {
         say("  socInit failed");
@@ -332,7 +369,7 @@ void test_net(void)
     }
     sock = socket(AF_INET, SOCK_DGRAM, 0);
     if (sock < 0) {
-        say("  socket() failed: %d", errno);
+        say("  socket() failed: %s", err_name(errno));
         goto out;
     }
     int rcvbuf = 256 * 1024;

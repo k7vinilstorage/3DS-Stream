@@ -8,7 +8,7 @@
 #include <3ds.h>
 #include <stdint.h>
 
-#define PROBE_VERSION "0.1"
+#define PROBE_VERSION "0.2"
 #define PROBE_DIR "sdmc:/3ds/3ds-stream"
 
 /* Tamanho do stream no 3DS: a tela de cima, 1:1. */
@@ -25,6 +25,8 @@ static inline uint64_t now_us(void)
 void report_init(void);
 void say(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 void report_save(void);
+/* Outro arquivo (o padrão é PROBE_DIR/probe_result.txt). */
+void report_set_file(const char *path);
 /* Só na tela (progresso), não vai para o arquivo. */
 void status(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 

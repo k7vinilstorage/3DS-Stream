@@ -21,8 +21,13 @@ homebrew that measures them and writes everything to
 3. For audio, the DSP firmware dump must be at `sdmc:/3ds/dspfirm.cdc`
    (the usual DSP1 homebrew makes it). Without it, the audio step says so
    and the rest runs.
-4. Press **A**. It takes about a minute. Send back `probe_result.txt` (and,
-   on a New 3DS, the `mvd_dump_*.bin` next to it).
+4. The 3DS must be on Wi-Fi: the wireless switch on (on the Old 3DS it is
+   on the side, and the LED lights up), and a connection set up in
+   **System Settings > Internet Settings**. The probe waits up to 20 s for
+   it.
+5. Press **A** for everything (about a minute), or **X** for the network
+   only (written to `probe_net.txt`, so the full result stays). Send back
+   `probe_result.txt` (and, on a New 3DS, the `mvd_dump_*.bin` next to it).
 
 If the console freezes in a step, turn it off and run the probe again: the
 step that was running goes to `crashed.txt` and is skipped, so the others
@@ -33,7 +38,7 @@ still run. Delete `crashed.txt` to try it again.
 | step | question | what to look at |
 |---|---|---|
 | system | which model, firmware, free memory | `model:` line |
-| JPEG | software JPEG decode at 400x240, qualities 50-95, on a busy test pattern (`src2`) and a desktop image (`card`): libjpeg straight to RGB565, the same with the fast IDCT, and YCbCr planes + the **Y2R** hardware converter | ms/frame per column; on a New 3DS, at 268 MHz (the Old 3DS clock) and 804 MHz. 16.7 ms = 60 fps |
+| JPEG | software JPEG decode at 400x240, qualities 50-95, on a busy test pattern (`src2`) and a desktop image (`card`): libjpeg straight to RGB565 (`rgb565`), the same with the fast IDCT (`fast`), and only to the YCbCr planes, with the exact and the fast IDCT (`raw`, `rawf`), whose colour conversion goes to the **Y2R** hardware (`+y2r`, measured apart) | ms/frame per column; on a New 3DS, at 268 MHz (the Old 3DS clock) and 804 MHz. 16.7 ms = 60 fps |
 | audio | IMA ADPCM decode cost (the PSP's `ima.c`), NDSP start latency, 20 ms chunks with 4 queued (as they come from the network) | `% of a core`, `start latency`, `underruns` |
 | network | the PSPStream server over UDP, protocol v5 as is: broadcast discovery, 20 pings, then 6 s of JPEG one frame at a time (network only), and 6 s decoding and showing each frame | `ping`, `fps`, `lost`, `burst KB/s` (the Wi-Fi throughput) |
 | MVD | New 3DS only. The server's own H.264 packets (`oh_*` clips, made by its encoder): all-IDR, P frames with the 2 copies the PSP needs, P frames without copies, with and without the AUD NALs, IDR every 10 frames, and a 5-frame loss followed by an IDR | `ok`/`ERROR`, ms/frame, and the **lag** lines |
@@ -56,6 +61,8 @@ came out:
 - `after the loss: recovered on the IDR` — after skipping 5 packets, the IDR
   brings the picture back without resetting the decoder (on the PSP, this
   case powered the console off until the stream called Stop first).
+
+Results so far: [Results.md](Results.md).
 
 ## Building
 

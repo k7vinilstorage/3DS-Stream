@@ -45,6 +45,12 @@ static inline int SOCU_GetIPInfo(struct in_addr *ip, struct in_addr *mask, struc
     return 0;
 }
 
+/* Wi-Fi: sempre conectado no PC */
+static inline Result acInit(void) { return 0; }
+static inline void acExit(void) {}
+static inline Result ACU_GetWifiStatus(u32 *out) { *out = 1; return 0; }
+#define R_SUCCEEDED(r) ((r) >= 0)
+
 /* memória e cache */
 static inline void *linearAlloc(size_t n) { return aligned_alloc(64, (n + 63) / 64 * 64); }
 static inline void *linearMemAlign(size_t n, size_t a) { return aligned_alloc(a, (n + a - 1) / a * a); }

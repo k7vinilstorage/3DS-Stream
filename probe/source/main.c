@@ -26,8 +26,7 @@ void test_sysinfo(void)
     say("model: %s (%s), firmware %lu.%lu.%lu, kernel %lu.%lu.%lu", model < 6 ? models[model] : "?",
         g_new3ds ? "New 3DS hardware" : "Old 3DS hardware", GET_VERSION_MAJOR(fw), GET_VERSION_MINOR(fw),
         GET_VERSION_REVISION(fw), GET_VERSION_MAJOR(kv), GET_VERSION_MINOR(kv), GET_VERSION_REVISION(kv));
-    say("linear heap free: %lu KB, heap free: %lu KB", linearSpaceFree() / 1024,
-        (u32)(osGetMemRegionFree(MEMREGION_APPLICATION) / 1024));
+    say("linear heap free: %lu KB", linearSpaceFree() / 1024);
 }
 
 static void wait_key(u32 keys)
@@ -60,33 +59,42 @@ int main(void)
            "(New 3DS) the H.264 decoder.\n\n"
            "For the network part, on the PC:\n"
            " pspstream --source test --size 400x240\n\n"
-           "A: start    START: exit\n");
+           "A: everything   X: network only\n"
+           "START: exit\n");
+    u32 k;
     for (;;) {
         if (!aptMainLoop())
             goto out;
         hidScanInput();
-        u32 k = hidKeysDown();
+        k = hidKeysDown();
         if (k & KEY_START)
             goto out;
-        if (k & KEY_A)
+        if (k & (KEY_A | KEY_X))
             break;
         gspWaitForVBlank();
     }
     consoleClear();
 
-    test_sysinfo();
-    report_save();
-    test_jpeg();
-    test_audio();
-    test_net();
-    test_mvd();
+    if (k & KEY_X) {
+        /* só a rede, num arquivo à parte: o resultado completo fica */
+        report_set_file(PROBE_DIR "/probe_net.txt");
+        test_sysinfo();
+        test_net();
+    } else {
+        test_sysinfo();
+        report_save();
+        test_jpeg();
+        test_audio();
+        test_net();
+        test_mvd();
+    }
     if (g_new3ds)
         osSetSpeedupEnable(false);
 
     say("");
     say("done");
     report_save();
-    printf("\nSaved to %s/probe_result.txt\nSTART: exit\n", PROBE_DIR);
+    printf("\nSaved to %s\nSTART: exit\n", k & KEY_X ? PROBE_DIR "/probe_net.txt" : PROBE_DIR "/probe_result.txt");
     wait_key(KEY_START);
 out:
     romfsExit();

@@ -10,6 +10,12 @@
 #define REPORT_MAX (64 * 1024)
 static char report[REPORT_MAX];
 static int report_len;
+static const char *report_path = PROBE_DIR "/probe_result.txt";
+
+void report_set_file(const char *path)
+{
+    report_path = path;
+}
 
 void report_init(void)
 {
@@ -47,7 +53,7 @@ void status(const char *fmt, ...)
 
 void report_save(void)
 {
-    FILE *f = fopen(PROBE_DIR "/probe_result.txt", "w");
+    FILE *f = fopen(report_path, "w");
     if (!f)
         return;
     fwrite(report, 1, report_len, f);
