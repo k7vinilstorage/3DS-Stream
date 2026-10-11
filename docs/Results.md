@@ -66,3 +66,26 @@ not to the broadcast" (router isolation or the 3DS).
 
 The PSP's audio path works as is: `ima.c` with NDSP, 20 ms packets, no
 change on the server.
+
+### Network (probe 0.3)
+
+| measure | value |
+|---|---|
+| "Find the PC" (broadcast) | answered in 185 ms |
+| ping, 20 pings over Wi-Fi | 20/20; min 4.0 ms, median 5.7 ms, max 10.9 ms |
+| burst (first -> last chunk of a frame) | ~3.3-3.5 MB/s, from small frames (5-6 chunks): indicative only |
+
+- Broadcast discovery works on the 3DS, so the PSP's "Find the PC" carries
+  over as is. The 0.2 run that found nothing had no server answering.
+- The stream part of this run is **not valid**: the server was started
+  without `--size 400x240`, so it picked H.264 with P frames (480x272), and
+  it sends that even to a client that does not set `PS_CAP_H264` (it only
+  logs a warning). The probe expected JPEG (frames read as `0x0`, decode
+  failed, P-frame losses). Probe 0.4 recognises the payload, says how to
+  start the server and skips the invalid part.
+- The server behaviour is worth a change in PSP-Stream (protocol v6, or
+  even v5): with a client that does not set `PS_CAP_H264`, fall back to
+  JPEG instead of sending H.264 it cannot decode.
+- If the burst figure holds with bigger frames, the 3DS Wi-Fi is several
+  times the PSP's 802.11b (~400-600 KB/s): JPEG at 18 KB x 55 fps
+  (~1 MB/s) would fit.

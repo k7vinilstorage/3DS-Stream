@@ -177,7 +177,19 @@ typedef struct {
     int frames, lost, stray, stripped, decode_fail;
     uint64_t bytes, burst_bytes, burst_us, first_us, decode_us;
     int burst_n, w, h;
+    int kind; /* o que o servidor manda: PAYLOAD_* (do 1º frame) */
 } stream_stats_t;
+
+enum { PAYLOAD_UNKNOWN, PAYLOAD_JPEG, PAYLOAD_H264 };
+
+static int payload_kind(const uint8_t *p, int n)
+{
+    if (n >= 2 && p[0] == 0xFF && p[1] == 0xD8)
+        return PAYLOAD_JPEG;
+    if (n >= 4 && p[0] == 0 && p[1] == 0 && (p[2] == 1 || (p[2] == 0 && p[3] == 1)))
+        return PAYLOAD_H264;
+    return PAYLOAD_UNKNOWN;
+}
 
 /* Um frame: pedido enviado, espera os pedaços. 1 = completo, 0 = perdido, -1 = erro. */
 static int get_frame(ps_req_t *req, stream_stats_t *st, uint32_t *frame_no, uint32_t *send_ts, int *size,
@@ -269,10 +281,13 @@ static void stream_phase(int decode, stream_stats_t *st)
             st->burst_us += t_last - t_first;
             st->burst_n++;
         }
-        if (st->frames == 1)
-            jpeg_size(frame, size, &st->w, &st->h);
+        if (st->frames == 1) {
+            st->kind = payload_kind(frame, size);
+            if (st->kind == PAYLOAD_JPEG)
+                jpeg_size(frame, size, &st->w, &st->h);
+        }
         uint64_t t_dec = now_us();
-        if (decode) {
+        if (decode && st->kind == PAYLOAD_JPEG) {
             int w, h;
             if (jpeg_show(frame, size, &w, &h))
                 st->decode_fail++;
@@ -443,6 +458,16 @@ void test_net(void)
     stream_stats_t st;
     status("  stream, network only (%d s)...", PHASE_S);
     stream_phase(0, &st);
+    if (st.frames && st.kind != PAYLOAD_JPEG) {
+        /* Sem --size 400x240 o servidor escolhe H.264 com frames P (480x272) e
+         * manda mesmo para quem não declara PS_CAP_H264: frames, perdas e FPS
+         * deste teste não valem. */
+        say("  the server sends %s, not JPEG: it was started without --size 400x240.",
+            st.kind == PAYLOAD_H264 ? "H.264" : "something else");
+        say("  Run it as: pspstream --source test --size 400x240 (or add --codec jpeg)");
+        stream_report("network only (NOT VALID, wrong codec)", &st);
+        goto out;
+    }
     if (st.frames && (st.w != VID_W || st.h != VID_H))
         say("  NOTE: the server sends %dx%d; run it with --size 400x240", st.w, st.h);
     stream_report("JPEG, network only", &st);
